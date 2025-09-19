@@ -8,7 +8,11 @@ const formatUrlName = (name: string): string => {
     return name.toLowerCase().replace(/ /g, '_').replace(/&/g, 'and');
 };
 
-export const fetchItemPrices = async (itemNames: string[], platform: Platform): Promise<MarketItem[]> => {
+export const fetchItemPrices = async (
+    itemNames: string[],
+    platform: Platform,
+    onItemProcessed: (item: MarketItem) => void
+): Promise<void> => {
     const pricePromises = itemNames.map(async (name) => {
         const urlName = formatUrlName(name);
         const itemData: MarketItem = { name, urlName, lowestPrice: null, avgPrice: null, soldCount: null };
@@ -60,19 +64,15 @@ export const fetchItemPrices = async (itemNames: string[], platform: Platform): 
             } else if (statsResponse.status !== 404) {
                 console.warn(`Could not fetch statistics for ${name}: ${statsResponse.status} ${statsResponse.statusText}`);
             }
-
-            return itemData;
+            
+            onItemProcessed(itemData);
 
         } catch (error) {
             console.error(`Error fetching price data for ${name}:`, error);
             const errorMessage = error instanceof Error ? error.message : 'Failed to fetch data';
-            return { ...itemData, error: errorMessage }; // Return item with an error message
+            onItemProcessed({ ...itemData, error: errorMessage });
         }
     });
 
-    const results = await Promise.allSettled(pricePromises);
-    
-    return results
-        .filter(result => result.status === 'fulfilled')
-        .map(result => (result as PromiseFulfilledResult<MarketItem>).value);
+    await Promise.allSettled(pricePromises);
 };

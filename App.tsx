@@ -58,6 +58,7 @@ function App() {
 
         setIsLoading(true);
         setError(null);
+        setMarketItems([]); // Initialize for streaming results
 
         // Start ETA countdown
         const initialEta = 15; // A generous estimate in seconds
@@ -78,19 +79,25 @@ function App() {
             setIsLoading(false);
             if (timerRef.current) clearInterval(timerRef.current);
             setEta(null);
+            setMarketItems(null); // Reset to show uploader again on AI error
             return;
         }
 
         try {
             if (itemNames.length === 0) {
-              setMarketItems([]);
               setIsLoading(false);
+              if (timerRef.current) clearInterval(timerRef.current);
+              setEta(null);
               return;
             }
 
             setLoadingMessage(`Found ${itemNames.length} items, fetching prices for ${platform.toUpperCase()}...`);
-            const itemsWithPrices = await fetchItemPrices(itemNames, platform);
-            setMarketItems(itemsWithPrices);
+            
+            const onItemProcessed = (item: MarketItem) => {
+                setMarketItems(prevItems => [...(prevItems || []), item]);
+            };
+
+            await fetchItemPrices(itemNames, platform, onItemProcessed);
 
         } catch (err) {
             console.error("Market Fetching Error:", err);
@@ -138,7 +145,7 @@ function App() {
                     disabled={isLoading}
                 />
                 <main className="flex-grow flex flex-col items-center justify-center">
-                    {!isLoading && marketItems === null && (
+                    {marketItems === null && !isLoading && (
                         <ImageUploader 
                             onFileSelect={handleFileSelect}
                             onScan={handleScan}
@@ -150,7 +157,7 @@ function App() {
                         />
                     )}
                     {isLoading && <Loader message={loadingMessage} eta={eta} />}
-                    {!isLoading && marketItems !== null && (
+                    {marketItems !== null && (
                         <PriceDisplay items={marketItems} onReset={resetState} />
                     )}
                 </main>
