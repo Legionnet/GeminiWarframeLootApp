@@ -1,0 +1,7 @@
+{
+  "name": "Warframe Market Scanner",
+  "description": "Upload a screenshot of your Warframe relic rewards to get the average market price for each item. This app uses the Gemini API for OCR and the Warframe.market API for pricing data.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
