@@ -47,3 +47,15 @@ export interface WarframeMarketStatisticsResponse {
         };
     };
 }
+
+// From Warframe Market API /items endpoint
+export interface WarframeMarketItemShort {
+    item_name: string;
+    url_name: string;
+}
+
+export interface WarframeMarketItemsResponse {
+    payload: {
+        items: WarframeMarketItemShort[];
+    };
+}

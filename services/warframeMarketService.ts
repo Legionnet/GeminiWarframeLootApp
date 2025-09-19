@@ -1,4 +1,10 @@
-import { MarketItem, WarframeMarketOrdersResponse, WarframeMarketStatisticsResponse, Platform } from '../types';
+import { 
+    MarketItem, 
+    WarframeMarketOrdersResponse, 
+    WarframeMarketStatisticsResponse, 
+    Platform,
+    WarframeMarketItemsResponse
+} from '../types';
 
 // We are using a public CORS proxy to bypass browser restrictions.
 // The proxy forwards the request to the official Warframe Market API.
@@ -6,6 +12,21 @@ const API_BASE_URL = 'https://corsproxy.io/?https://api.warframe.market/v1';
 
 const formatUrlName = (name: string): string => {
     return name.toLowerCase().replace(/ /g, '_').replace(/&/g, 'and');
+};
+
+export const fetchAllItemNames = async (): Promise<string[]> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/items`);
+        if (!response.ok) {
+            console.error(`Failed to fetch items list: ${response.status} ${response.statusText}`);
+            return [];
+        }
+        const data: WarframeMarketItemsResponse = await response.json();
+        return data.payload.items.map(item => item.item_name);
+    } catch (error) {
+        console.error("Error fetching all item names:", error);
+        return [];
+    }
 };
 
 export const fetchItemPrices = async (

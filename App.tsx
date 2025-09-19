@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { MarketItem, Platform } from './types';
 import { extractItemsFromImage } from './services/geminiService';
-import { fetchItemPrices } from './services/warframeMarketService';
+import { fetchItemPrices, fetchAllItemNames } from './services/warframeMarketService';
 
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -9,6 +9,7 @@ import ImageUploader from './components/ImageUploader';
 import Loader from './components/Loader';
 import PriceDisplay from './components/PriceDisplay';
 import PlatformSelector from './components/PlatformSelector';
+import ItemSearch from './components/ItemSearch';
 
 const fileToBase64 = (file: File): Promise<{base64: string, mimeType: string}> => {
     return new Promise((resolve, reject) => {
@@ -35,10 +36,18 @@ function App() {
     const [error, setError] = useState<string | null>(null);
     const [platform, setPlatform] = useState<Platform>('pc');
     const [eta, setEta] = useState<number | null>(null);
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const [allItems, setAllItems] = useState<string[]>([]);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const appRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
+        // Fetch all item names for autocomplete on initial load
+        const loadAllItems = async () => {
+            const items = await fetchAllItemNames();
+            setAllItems(items);
+        };
+        loadAllItems();
+
         // Cleanup timer on component unmount
         return () => {
             if (timerRef.current) {
@@ -88,13 +97,14 @@ function App() {
               setIsLoading(false);
               if (timerRef.current) clearInterval(timerRef.current);
               setEta(null);
+              setMarketItems([]); // Set to empty array to show "not found" message
               return;
             }
 
             setLoadingMessage(`Found ${itemNames.length} items, fetching prices for ${platform.toUpperCase()}...`);
             
             const onItemProcessed = (item: MarketItem) => {
-                setMarketItems(prevItems => [...(prevItems || []), item]);
+                setMarketItems(prevItems => [...(prevItems || []), item].sort((a,b) => (b.avgPrice || 0) - (a.avgPrice || 0)));
             };
 
             await fetchItemPrices(itemNames, platform, onItemProcessed);
@@ -103,6 +113,7 @@ function App() {
             console.error("Market Fetching Error:", err);
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             setError(`Failed to fetch market prices: ${errorMessage}`);
+            setMarketItems(null); // Reset to show uploader again on market error
         } finally {
             setIsLoading(false);
             setLoadingMessage('');
@@ -111,12 +122,45 @@ function App() {
         }
     };
 
+    const handleSearch = async (itemName: string) => {
+        if (!itemName) return;
+
+        setIsLoading(true);
+        setError(null);
+        setMarketItems([]);
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(null);
+        }
+        setImageFile(null);
+
+        try {
+            setLoadingMessage(`Fetching price for "${itemName}" on ${platform.toUpperCase()}...`);
+            
+            const onItemProcessed = (item: MarketItem) => {
+                setMarketItems(prevItems => [...(prevItems || []), item]);
+            };
+
+            await fetchItemPrices([itemName], platform, onItemProcessed);
+
+        } catch (err) {
+            console.error("Market Fetching Error:", err);
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            setError(`Failed to fetch market prices: ${errorMessage}`);
+            setMarketItems(null); // Reset to show input view on error
+        } finally {
+            setIsLoading(false);
+            setLoadingMessage('');
+        }
+    };
+
     const handlePlatformChange = useCallback((newPlatform: Platform) => {
         setPlatform(newPlatform);
         // Clear previous results if platform changes, as they are now invalid
-        setMarketItems(null);
-        setError(null);
-    }, []);
+        if(marketItems !== null) {
+            resetState();
+        }
+    }, [marketItems]);
     
     const resetState = () => {
         setImageFile(null);
@@ -146,18 +190,30 @@ function App() {
                 />
                 <main className="flex-grow flex flex-col items-center justify-center">
                     {marketItems === null && !isLoading && (
-                        <ImageUploader 
-                            onFileSelect={handleFileSelect}
-                            onScan={handleScan}
-                            onReset={resetState}
-                            isProcessing={isLoading}
-                            previewUrl={previewUrl}
-                            error={error}
-                            pasteTargetRef={appRef}
-                        />
+                         <div className="w-full max-w-xl mx-auto flex flex-col items-center gap-6">
+                            <ItemSearch 
+                                onSearch={handleSearch}
+                                isProcessing={isLoading}
+                                allItems={allItems}
+                            />
+                            <div className="flex items-center w-full">
+                                <div className="flex-grow border-t border-gray-600"></div>
+                                <span className="flex-shrink mx-4 text-gray-400 font-semibold">OR</span>
+                                <div className="flex-grow border-t border-gray-600"></div>
+                            </div>
+                            <ImageUploader 
+                                onFileSelect={handleFileSelect}
+                                onScan={handleScan}
+                                onReset={resetState}
+                                isProcessing={isLoading}
+                                previewUrl={previewUrl}
+                                error={error}
+                                pasteTargetRef={appRef}
+                            />
+                        </div>
                     )}
                     {isLoading && <Loader message={loadingMessage} eta={eta} />}
-                    {marketItems !== null && (
+                    {marketItems !== null && !isLoading && (
                         <PriceDisplay items={marketItems} onReset={resetState} />
                     )}
                 </main>
