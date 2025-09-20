@@ -1,15 +1,15 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { MarketItem, Platform } from './types';
-import { extractItemsFromImage } from './services/geminiService';
-import { fetchItemPrices, fetchAllItemNames } from './services/warframeMarketService';
+import { MarketItem, Platform, WarframeMarketItemShort } from '../types';
+import { extractItemsFromImage } from '../services/geminiService';
+import { fetchItemPrices, fetchAllItems } from '../services/warframeMarketService';
 
-import Header from './components/Header';
-import Footer from './components/Footer';
-import ImageUploader from './components/ImageUploader';
-import Loader from './components/Loader';
-import PriceDisplay from './components/PriceDisplay';
-import PlatformSelector from './components/PlatformSelector';
-import ItemSearch from './components/ItemSearch';
+import Header from './Header';
+import Footer from './Footer';
+import ImageUploader from './ImageUploader';
+import Loader from './Loader';
+import PriceDisplay from './PriceDisplay';
+import PlatformSelector from './PlatformSelector';
+import ItemSearch from './ItemSearch';
 
 const fileToBase64 = (file: File): Promise<{base64: string, mimeType: string}> => {
     return new Promise((resolve, reject) => {
@@ -36,15 +36,21 @@ function App() {
     const [error, setError] = useState<string | null>(null);
     const [platform, setPlatform] = useState<Platform>('pc');
     const [eta, setEta] = useState<number | null>(null);
-    const [allItems, setAllItems] = useState<string[]>([]);
+    const [allItems, setAllItems] = useState<WarframeMarketItemShort[]>([]);
+    const [itemMap, setItemMap] = useState<Map<string, WarframeMarketItemShort>>(new Map());
+
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const appRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
         // Fetch all item names for autocomplete on initial load
         const loadAllItems = async () => {
-            const items = await fetchAllItemNames();
+            const items = await fetchAllItems();
             setAllItems(items);
+            // Create a map for fast lookups
+            const newMap = new Map<string, WarframeMarketItemShort>();
+            items.forEach(item => newMap.set(item.item_name.toLowerCase(), item));
+            setItemMap(newMap);
         };
         loadAllItems();
 
@@ -91,23 +97,44 @@ function App() {
             setMarketItems(null); // Reset to show uploader again on AI error
             return;
         }
+        
+        // Keep the original order from the OCR for sorting later
+        const originalItemOrder = itemNames.map(name => name.toLowerCase());
+
+        const itemsToFetch = itemNames
+            .map(name => itemMap.get(name.toLowerCase()))
+            .filter((item): item is WarframeMarketItemShort => !!item);
+        
+        if (itemsToFetch.length === 0) {
+            setIsLoading(false);
+            if (timerRef.current) clearInterval(timerRef.current);
+            setEta(null);
+            // setMarketItems is already [] so PriceDisplay will show the "not found" message
+            return;
+        }
 
         try {
-            if (itemNames.length === 0) {
-              setIsLoading(false);
-              if (timerRef.current) clearInterval(timerRef.current);
-              setEta(null);
-              setMarketItems([]); // Set to empty array to show "not found" message
-              return;
-            }
-
-            setLoadingMessage(`Found ${itemNames.length} items, fetching prices for ${platform.toUpperCase()}...`);
+            setLoadingMessage(`Found ${itemsToFetch.length} items, fetching prices for ${platform.toUpperCase()}...`);
             
             const onItemProcessed = (item: MarketItem) => {
-                setMarketItems(prevItems => [...(prevItems || []), item].sort((a,b) => (b.avgPrice || 0) - (a.avgPrice || 0)));
+                setMarketItems(prevItems => {
+                    const newItems = [...(prevItems || []), item];
+                    // Sort based on the original order from the OCR scan
+                    newItems.sort((a, b) => {
+                        const indexA = originalItemOrder.indexOf(a.name.toLowerCase());
+                        const indexB = originalItemOrder.indexOf(b.name.toLowerCase());
+                        
+                        // Items not found in original list are pushed to the end
+                        if (indexA === -1) return 1;
+                        if (indexB === -1) return -1;
+
+                        return indexA - indexB;
+                    });
+                    return newItems;
+                });
             };
 
-            await fetchItemPrices(itemNames, platform, onItemProcessed);
+            await fetchItemPrices(itemsToFetch, platform, onItemProcessed);
 
         } catch (err) {
             console.error("Market Fetching Error:", err);
@@ -125,6 +152,12 @@ function App() {
     const handleSearch = async (itemName: string) => {
         if (!itemName) return;
 
+        const itemToFetch = itemMap.get(itemName.toLowerCase());
+        if (!itemToFetch) {
+            setError(`Could not find an item named "${itemName}". Please check the spelling or try the autocomplete suggestions.`);
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
         setMarketItems([]);
@@ -141,7 +174,7 @@ function App() {
                 setMarketItems(prevItems => [...(prevItems || []), item]);
             };
 
-            await fetchItemPrices([itemName], platform, onItemProcessed);
+            await fetchItemPrices([itemToFetch], platform, onItemProcessed);
 
         } catch (err) {
             console.error("Market Fetching Error:", err);
@@ -179,7 +212,7 @@ function App() {
         <div 
             ref={appRef}
             className="min-h-screen bg-gray-900 bg-cover bg-center" 
-            style={{ backgroundImage: "linear-gradient(rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.95)), url('https://picsum.photos/1920/1080?grayscale&blur=5')" }}
+            style={{ backgroundImage: "linear-gradient(rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.95)), url('https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1920&auto=format&fit=crop')" }}
         >
             <div className="container mx-auto px-4 py-8 flex flex-col min-h-screen">
                 <Header />
@@ -194,7 +227,7 @@ function App() {
                             <ItemSearch 
                                 onSearch={handleSearch}
                                 isProcessing={isLoading}
-                                allItems={allItems}
+                                allItems={allItems.map(item => item.item_name)}
                             />
                             <div className="flex items-center w-full">
                                 <div className="flex-grow border-t border-gray-600"></div>
@@ -213,8 +246,8 @@ function App() {
                         </div>
                     )}
                     {isLoading && <Loader message={loadingMessage} eta={eta} />}
-                    {marketItems !== null && !isLoading && (
-                        <PriceDisplay items={marketItems} onReset={resetState} />
+                    {marketItems !== null && (
+                        <PriceDisplay items={marketItems} onReset={resetState} isLoading={isLoading} />
                     )}
                 </main>
                 <Footer />

@@ -4,6 +4,7 @@ import { MarketItem } from '../types';
 interface PriceDisplayProps {
     items: MarketItem[];
     onReset: () => void;
+    isLoading: boolean;
 }
 
 const PlatinumIcon: React.FC = () => (
@@ -13,7 +14,7 @@ const PlatinumIcon: React.FC = () => (
 );
 
 
-const PriceDisplay: React.FC<PriceDisplayProps> = ({ items, onReset }) => {
+const PriceDisplay: React.FC<PriceDisplayProps> = ({ items, onReset, isLoading }) => {
     return (
         <div className="w-full max-w-4xl mx-auto mt-8">
             <div className="text-center mb-6">
@@ -25,9 +26,9 @@ const PriceDisplay: React.FC<PriceDisplayProps> = ({ items, onReset }) => {
                     Scan Another Image
                 </button>
             </div>
-            {items.length === 0 ? (
+            {items.length === 0 && !isLoading ? (
                 <p className="text-center text-gray-400 bg-gray-800 p-6 rounded-lg">
-                    Could not identify any items in the image. Please try another screenshot.
+                    Could not identify any items. Please try another screenshot or search term.
                 </p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

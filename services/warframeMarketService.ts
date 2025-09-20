@@ -3,26 +3,53 @@ import {
     WarframeMarketOrdersResponse, 
     WarframeMarketStatisticsResponse, 
     Platform,
-    WarframeMarketItemsResponse
+    WarframeMarketItemsResponse,
+    WarframeMarketItemShort
 } from '../types';
 
 // We are using a public CORS proxy to bypass browser restrictions.
 // The proxy forwards the request to the official Warframe Market API.
 const API_BASE_URL = 'https://corsproxy.io/?https://api.warframe.market/v1';
+const CACHE_KEY = 'warframe_market_items';
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-const formatUrlName = (name: string): string => {
-    return name.toLowerCase().replace(/ /g, '_').replace(/&/g, 'and');
-};
+interface CachedItems {
+    timestamp: number;
+    items: WarframeMarketItemShort[];
+}
 
-export const fetchAllItemNames = async (): Promise<string[]> => {
+export const fetchAllItems = async (): Promise<WarframeMarketItemShort[]> => {
     try {
+        const cachedData = localStorage.getItem(CACHE_KEY);
+        if (cachedData) {
+            const { timestamp, items }: CachedItems = JSON.parse(cachedData);
+            if (Date.now() - timestamp < CACHE_DURATION_MS) {
+                console.log("Loaded all items from cache.");
+                return items;
+            }
+        }
+    } catch (error) {
+        console.warn("Could not read from cache:", error);
+    }
+    
+    try {
+        console.log("Fetching all items from API...");
         const response = await fetch(`${API_BASE_URL}/items`);
         if (!response.ok) {
-            console.error(`Failed to fetch items list: ${response.status} ${response.statusText}`);
-            return [];
+            throw new Error(`Failed to fetch items list: ${response.status} ${response.statusText}`);
         }
         const data: WarframeMarketItemsResponse = await response.json();
-        return data.payload.items.map(item => item.item_name);
+        const items = data.payload.items;
+
+        try {
+            const cachePayload: CachedItems = { timestamp: Date.now(), items };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+            console.log("Saved all items to cache.");
+        } catch (error) {
+            console.warn("Could not save to cache:", error);
+        }
+
+        return items;
     } catch (error) {
         console.error("Error fetching all item names:", error);
         return [];
@@ -30,12 +57,12 @@ export const fetchAllItemNames = async (): Promise<string[]> => {
 };
 
 export const fetchItemPrices = async (
-    itemNames: string[],
+    items: WarframeMarketItemShort[],
     platform: Platform,
     onItemProcessed: (item: MarketItem) => void
 ): Promise<void> => {
-    const pricePromises = itemNames.map(async (name) => {
-        const urlName = formatUrlName(name);
+    const pricePromises = items.map(async (itemInfo) => {
+        const { item_name: name, url_name: urlName } = itemInfo;
         const itemData: MarketItem = { name, urlName, lowestPrice: null, avgPrice: null, soldCount: null };
         const headers = { 'Platform': platform, 'Language': 'en' };
 
