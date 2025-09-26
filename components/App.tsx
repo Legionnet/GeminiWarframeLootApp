@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { MarketItem, Platform, WarframeMarketItemShort } from '../types';
-import { extractItemsFromImage } from '../services/geminiService';
+import { extractItemsFromImage } from '../services/ocrService';
 import { fetchItemPrices, fetchAllItems } from '../services/warframeMarketService';
 
 import Header from './Header';
@@ -89,8 +89,8 @@ function App() {
             const { base64, mimeType } = await fileToBase64(imageFile);
             itemNames = await extractItemsFromImage(base64, mimeType);
         } catch (err) {
-            console.error("Gemini API Error:", err);
-            setError("Failed to analyze image with AI. Please check your API key or try a different screenshot.");
+            console.error("OCR API Error:", err);
+            setError("Failed to analyze image with OCR. Please check your API key or try a different screenshot.");
             setIsLoading(false);
             if (timerRef.current) clearInterval(timerRef.current);
             setEta(null);
